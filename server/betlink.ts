@@ -2,67 +2,12 @@ import crypto from "node:crypto"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Plugin } from "vite"
 import { loadEnv } from "vite"
-
-type Env = {
-  baseUrl: string
-  operatorId: string
-  apiKey: string
-  signingSecret: string
-}
-
-function readEnv(mode: string): Env {
-  const env = loadEnv(mode, process.cwd(), "")
-  return {
-    baseUrl: env.BETLINK_BASE_URL || "https://validador.betlink.com.ve/api/v1",
-    operatorId: env.BETLINK_OPERATOR_ID || "",
-    apiKey: env.BETLINK_API_KEY || "",
-    signingSecret: env.BETLINK_SIGNING_SECRET || "",
-  }
-}
-
-export function hmacSign(canonicalObject: unknown, signingSecret: string): string {
-  const canonicalJson = JSON.stringify(canonicalObject)
-  return crypto
-    .createHmac("sha256", signingSecret)
-    .update(canonicalJson, "utf8")
-    .digest("hex")
-}
-
-function sortKeysDeep(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeysDeep)
-  if (value && typeof value === "object") {
-    const obj = value as Record<string, unknown>
-    const out: Record<string, unknown> = {}
-    for (const key of Object.keys(obj).sort()) {
-      out[key] = sortKeysDeep(obj[key])
-    }
-    return out
-  }
-  return value
-}
-
-function buildPrizeCanonical(body: Record<string, unknown>) {
-  const bets = Array.isArray(body.bets) ? [...body.bets] : []
-  bets.sort((a, b) => {
-    const ai = Number((a as { betIndex?: number }).betIndex ?? 0)
-    const bi = Number((b as { betIndex?: number }).betIndex ?? 0)
-    return ai - bi
-  })
-  return {
-    eventType: "PRIZE",
-    operatorId: body.operatorId,
-    currency: body.currency,
-    serial: body.serial,
-    paidAmount: body.paidAmount,
-    expectedPayoutAmount: body.expectedPayoutAmount,
-    prizedAt: body.prizedAt,
-    externalTicketKey: body.externalTicketKey,
-    originalTicketId: body.originalTicketId,
-    originalHuc: body.originalHuc,
-    bets: bets.map((bet) => sortKeysDeep(bet)),
-    metadata: sortKeysDeep(body.metadata ?? {}),
-  }
-}
+import {
+  handleBetlinkRoute,
+  hmacSign,
+  readBetlinkEnv,
+  type BetlinkRoute,
+} from "./betlink-core.ts"
 
 function verifyHmacVectors(signingSecretForTest = "test-secret-0123456789abcdef") {
   const cancelCanonical = {
@@ -125,39 +70,32 @@ function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.end(body)
 }
 
-async function forwardToBetlink(
-  env: Env,
-  path: string,
-  body: unknown,
-  idempotencyKey: string,
-) {
-  const url = `${env.baseUrl.replace(/\/$/, "")}${path}`
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": env.apiKey,
-      "x-idempotency-key": idempotencyKey,
-    },
-    body: JSON.stringify(body),
-  })
-  const text = await response.text()
-  let data: unknown = null
-  try {
-    data = text ? JSON.parse(text) : null
-  } catch {
-    data = { raw: text }
-  }
-  return { status: response.status, data }
+function routeFromPath(pathname: string): BetlinkRoute | null {
+  if (pathname === "/api/betlink/ingest") return "ingest"
+  if (pathname === "/api/betlink/prize") return "prize"
+  if (pathname === "/api/betlink/pending/certification")
+    return "pending/certification"
+  if (pathname === "/api/betlink/pending/prize") return "pending/prize"
+  return null
 }
 
 export function betlinkPlugin(mode = "development"): Plugin {
-  const env = readEnv(mode)
   verifyHmacVectors()
+
+  const resolveEnv = () => {
+    const fileEnv = loadEnv(mode, process.cwd(), "")
+    const env = readBetlinkEnv({ ...process.env, ...fileEnv })
+    return env
+  }
 
   return {
     name: "betlink-proxy",
     configureServer(server) {
+      const boot = resolveEnv()
+      console.info(
+        `[betlink] proxy → ${boot.baseUrl} (key ${boot.apiKey.slice(0, 12)}…)`,
+      )
+
       server.middlewares.use(async (req, res, next) => {
         if (!req.url || !req.method) return next()
         const url = new URL(req.url, "http://localhost")
@@ -174,84 +112,25 @@ export function betlinkPlugin(mode = "development"): Plugin {
           return
         }
 
-        if (!env.apiKey || !env.operatorId || !env.signingSecret) {
-          sendJson(res, 500, { error: "betlink_env_missing" })
+        const route = routeFromPath(url.pathname)
+        if (!route) {
+          sendJson(res, 404, { error: "not_found" })
           return
         }
 
         try {
+          const env = resolveEnv()
           const body = (await readJsonBody(req)) as Record<string, unknown>
           const idempotencyKey =
             (req.headers["x-idempotency-key"] as string | undefined) ||
             crypto.randomUUID()
-
-          if (url.pathname === "/api/betlink/ingest") {
-            const payload = {
-              ...body,
-              operatorId: body.operatorId || env.operatorId,
-            }
-            const result = await forwardToBetlink(
-              env,
-              "/bets/ingest",
-              payload,
-              idempotencyKey,
-            )
-            sendJson(res, result.status, result.data)
-            return
-          }
-
-          if (url.pathname === "/api/betlink/prize") {
-            const payload = {
-              ...body,
-              operatorId: body.operatorId || env.operatorId,
-            }
-            const canonical = buildPrizeCanonical(payload)
-            const signature = hmacSign(canonical, env.signingSecret)
-            const withSig = { ...payload, signature }
-            const result = await forwardToBetlink(
-              env,
-              "/bets/prize",
-              withSig,
-              idempotencyKey,
-            )
-            sendJson(res, result.status, result.data)
-            return
-          }
-
-          if (url.pathname === "/api/betlink/pending/certification") {
-            const payload = {
-              ...body,
-              operatorId: body.operatorId || env.operatorId,
-            }
-            const result = await forwardToBetlink(
-              env,
-              "/pending-remittance/certification",
-              payload,
-              idempotencyKey,
-            )
-            sendJson(res, result.status, result.data)
-            return
-          }
-
-          if (url.pathname === "/api/betlink/pending/prize") {
-            const payload = {
-              ...body,
-              operatorId: body.operatorId || env.operatorId,
-            }
-            const canonical = buildPrizeCanonical(payload)
-            const signature = hmacSign(canonical, env.signingSecret)
-            const withSig = { ...payload, signature }
-            const result = await forwardToBetlink(
-              env,
-              "/pending-remittance/prize",
-              withSig,
-              idempotencyKey,
-            )
-            sendJson(res, result.status, result.data)
-            return
-          }
-
-          sendJson(res, 404, { error: "not_found" })
+          const result = await handleBetlinkRoute(
+            route,
+            body,
+            idempotencyKey,
+            env,
+          )
+          sendJson(res, result.status, result.data)
         } catch (err) {
           sendJson(res, 502, {
             error: "betlink_proxy_failed",

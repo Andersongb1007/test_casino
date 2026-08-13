@@ -546,6 +546,7 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
               externalTicketKey: externalKey || "",
               ticketId,
               huc,
+              entroCon,
               salioCon,
             }),
           )

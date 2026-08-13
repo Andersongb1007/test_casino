@@ -69,15 +69,17 @@ export function mapCasinoIngest(opts: {
   }
 }
 
-/** Prize al retirar solo si hubo ganancia. paidAmount = total con el que salió. */
+/** Prize al retirar solo si hubo ganancia. paidAmount = ganancia neta (salió − entró). */
 export function mapCasinoPrize(opts: {
   serial: string
   externalTicketKey: string
   ticketId: string
   huc: string
+  entroCon: number
   salioCon: number
 }) {
-  const paidAmount = formatVesAmount(opts.salioCon)
+  const ganancia = Number((opts.salioCon - opts.entroCon).toFixed(2))
+  const paidAmount = formatVesAmount(ganancia)
   return {
     operatorId: BETLINK_OPERATOR_ID,
     currency: "VES",

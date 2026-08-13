@@ -1,5 +1,5 @@
 export const BETLINK_OPERATOR_ID =
-  "c4b0477d-c639-46b9-b746-57a97e905984"
+  "00000000-0000-0000-0000-00000000d210"
 
 export const BURNED_BETTOR = {
   firstName: "Prueba",

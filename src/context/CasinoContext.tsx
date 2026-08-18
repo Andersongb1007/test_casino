@@ -30,6 +30,7 @@ import {
   remitPrize,
 } from "@/lib/betlink/client"
 import { newSerial } from "@/lib/betlink/constants"
+import { buildBettor, validateProfileForBetlink } from "@/lib/betlink/bettor"
 import { mapCasinoIngest, mapCasinoPrize } from "@/lib/betlink/mapCasino"
 import {
   mapAnimalitosIngest,
@@ -84,7 +85,7 @@ type CasinoContextValue = {
   startCrash: (amount: number) => string | null
   cashOutCrash: (mult: number) => string | null
   crashBusted: () => void
-  withdrawToWallet: (cedula?: string) => string | null
+  withdrawToWallet: () => string | null
   resetWallet: () => void
   buyAnimalitosTicket: (opts: {
     brandId: string
@@ -139,13 +140,21 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
   const movementsRef = useRef(movements)
   const sessionRef = useRef(session)
   const ticketsRef = useRef(tickets)
+  const userRef = useRef(user)
 
   useEffect(() => {
     balanceRef.current = balance
     movementsRef.current = movements
     sessionRef.current = session
     ticketsRef.current = tickets
-  }, [balance, movements, session, tickets])
+    userRef.current = user
+  }, [balance, movements, session, tickets, user])
+
+  const profileError = useCallback((): string | null => {
+    const u = userRef.current
+    if (!u) return "Sesión no válida"
+    return validateProfileForBetlink(u)
+  }, [])
 
   useEffect(() => {
     void flushPendingRemittances()
@@ -213,11 +222,16 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
 
   const remitLotteryExit = useCallback(
     async (ticket: LotteryTicket, won: boolean, payout: number) => {
+      const u = userRef.current
+      if (!u) return
+      const err = validateProfileForBetlink(u)
+      if (err) return
+      const bettor = buildBettor(u)
       const isAnimal =
         ticket.kind === "animalitos" || ticket.kind === "dupleta"
       const payload = isAnimal
-        ? mapAnimalitosIngest(ticket)
-        : mapLoteriaIngest(ticket)
+        ? mapAnimalitosIngest(ticket, bettor)
+        : mapLoteriaIngest(ticket, bettor)
 
       const ingest = await remitIngest(payload)
       const serial = ingest.serial || nestedSerial(payload)
@@ -250,6 +264,10 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
 
   const enterGame = useCallback(
     (gameId: GameId, buyIn: number): string | null => {
+      const profileErr = profileError()
+      if (profileErr) return profileErr
+      const u = userRef.current!
+      const bettor = buildBettor(u)
       if (sessionRef.current) return "Ya estás en un juego. Retira a wallet primero."
       if (activeRound?.phase === "playing" || crashLive?.running)
         return "Espera la jugada"
@@ -281,7 +299,7 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
       setActiveRound(null)
 
       void (async () => {
-        const payload = mapCasinoIngest({ gameId, entroCon: buyIn })
+        const payload = mapCasinoIngest({ gameId, entroCon: buyIn, bettor })
         const ingest = await remitIngest(payload)
         const current = sessionRef.current
         if (!current || current.gameId !== gameId) return
@@ -299,7 +317,7 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
 
       return null
     },
-    [activeRound, crashLive, save],
+    [activeRound, crashLive, profileError, save],
   )
 
   const topUpSession = useCallback(
@@ -482,7 +500,10 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
   }, [crashLive])
 
   const withdrawToWallet = useCallback(
-    (cedula?: string): string | null => {
+    (): string | null => {
+      const profileErr = profileError()
+      if (profileErr) return profileErr
+      const bettor = buildBettor(userRef.current!)
       const sess = sessionRef.current
       if (!sess) return "No hay mesa activa"
       if (activeRound?.phase === "playing" || crashLive?.running)
@@ -530,7 +551,7 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
           const payload = mapCasinoIngest({
             gameId: certified.gameId,
             entroCon,
-            documentId: cedula,
+            bettor,
           })
           const ingest = await remitIngest(payload)
           ticketId = ingest.ticketId
@@ -555,7 +576,7 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
 
       return null
     },
-    [activeRound, crashLive, save],
+    [activeRound, crashLive, profileError, save],
   )
 
   const resetWallet = useCallback(() => {
@@ -586,6 +607,8 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
       mode?: "simple" | "dupleta"
       animalCodeB?: string
     }) => {
+      const profileErr = profileError()
+      if (profileErr) return { error: profileErr, ticket: null }
       const brand = ANIMAL_BRANDS.find((b) => b.id === opts.brandId)
       if (!brand) return { error: "Lotería inválida", ticket: null }
       if (!Number.isFinite(opts.amount) || opts.amount <= 0)
@@ -648,7 +671,7 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
       })
       return { error: null, ticket }
     },
-    [save],
+    [profileError, save],
   )
 
   const buyNumberTicket = useCallback(
@@ -660,6 +683,8 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
       amount: number
       zodiac?: string
     }) => {
+      const profileErr = profileError()
+      if (profileErr) return { error: profileErr, ticket: null }
       const brand = NUMBER_BRANDS.find((b) => b.id === opts.brandId)
       const turn = NUMBER_TURNS.find((t) => t.id === opts.turnId)
       const modality = NUMBER_MODALITIES.find((m) => m.id === opts.modalityId)
@@ -709,7 +734,7 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
       })
       return { error: null, ticket }
     },
-    [save],
+    [profileError, save],
   )
 
   const runTicketDraw = useCallback(

@@ -60,11 +60,23 @@ export type GameSessionData = {
   betlinkExternalKey?: string | null
 }
 
+export type DocumentTypeId = "V" | "E" | "J" | "P" | "G"
+
+export type UserProfile = {
+  firstName: string
+  lastName: string
+  phone: string
+  documentTypeId: DocumentTypeId
+  documentId: string
+  address: string
+}
+
 export type UserAccount = {
   id: string
   name: string
   email: string
   password: string
+  profile: UserProfile
   balance: number
   movements: WalletMovement[]
   gameSession: GameSessionData | null

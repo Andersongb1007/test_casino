@@ -1,16 +1,6 @@
 export const BETLINK_OPERATOR_ID =
   "0dc7e6f2-bbc8-4a7a-b079-b0fc08bcc776"
 
-export const BURNED_BETTOR = {
-  firstName: "Prueba",
-  lastName: "Casino",
-  documentId: "00000000",
-  documentTypeId: "V",
-  address: "Caracas, Venezuela",
-  phone: "04141234567",
-  email: "prueba.casino@ejemplo.test",
-} as const
-
 export function nowVeIso(): string {
   const d = new Date()
   const offset = -4 * 60

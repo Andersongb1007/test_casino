@@ -14,9 +14,10 @@ import {
   logoutUser,
   registerUser,
   updateUserData,
+  updateUserProfile,
   type GameSessionData,
 } from "@/lib/auth"
-import type { LotteryTicket, UserAccount, WalletMovement } from "@/lib/types"
+import type { LotteryTicket, UserAccount, UserProfile, WalletMovement } from "@/lib/types"
 
 type AuthContextValue = {
   user: UserAccount | null
@@ -24,6 +25,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => string | null
   register: (name: string, email: string, password: string) => string | null
   logout: () => void
+  updateProfile: (patch: Partial<UserProfile>) => string | null
   persistState: (patch: {
     balance?: number
     movements?: WalletMovement[]
@@ -67,6 +69,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const updateProfile = useCallback((patch: Partial<UserProfile>) => {
+    setUser((prev) => {
+      if (!prev) return prev
+      updateUserProfile(prev.id, patch)
+      const next = getUserById(prev.id)
+      return next ?? prev
+    })
+    return null
+  }, [])
+
   const persistState = useCallback(
     (patch: {
       balance?: number
@@ -85,8 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const value = useMemo(
-    () => ({ user, ready, login, register, logout, persistState }),
-    [user, ready, login, register, logout, persistState],
+    () => ({ user, ready, login, register, logout, updateProfile, persistState }),
+    [user, ready, login, register, logout, updateProfile, persistState],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

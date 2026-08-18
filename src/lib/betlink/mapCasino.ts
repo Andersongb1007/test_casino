@@ -1,9 +1,9 @@
 import type { GameId } from "@/lib/types"
 import { GAME_LABELS } from "@/lib/types"
 import { formatVesAmount } from "./money"
+import type { BettorPayload } from "./bettor"
 import {
   BETLINK_OPERATOR_ID,
-  BURNED_BETTOR,
   eventDateLabel,
   newExternalKey,
   newSerial,
@@ -23,14 +23,12 @@ const CASINO_CODE: Record<GameId, string> = {
 export function mapCasinoIngest(opts: {
   gameId: GameId
   entroCon: number
-  documentId?: string
+  bettor: BettorPayload
 }) {
   const drawDate = todayVeDate()
   const externalTicketKey = newExternalKey("CASINO")
   const serial = newSerial("CS")
   const ticketNumber = newTicketNumber("C")
-  const documentId =
-    (opts.documentId ?? "").replace(/\D/g, "") || BURNED_BETTOR.documentId
   const code = CASINO_CODE[opts.gameId]
 
   return {
@@ -43,10 +41,7 @@ export function mapCasinoIngest(opts: {
       ticketNumber,
       serial,
       issuedAt: nowVeIso(),
-      bettor: {
-        ...BURNED_BETTOR,
-        documentId,
-      },
+      bettor: opts.bettor,
       paymentMethod: "Saldo jugador",
     },
     selections: [

@@ -1,7 +1,7 @@
 import { formatVesAmount } from "./money"
+import type { BettorPayload } from "./bettor"
 import {
   BETLINK_OPERATOR_ID,
-  BURNED_BETTOR,
   eventDateLabel,
   newExternalKey,
   newSerial,
@@ -18,7 +18,7 @@ const LOTTERY_CODE_BY_BRAND: Record<string, string> = {
   "zoo-activo": "ZOO",
 }
 
-export function mapAnimalitosIngest(ticket: LotteryTicket) {
+export function mapAnimalitosIngest(ticket: LotteryTicket, bettor: BettorPayload) {
   const codes = ticket.selection.split("+")
   const primary = getAnimalitoByCode(codes[0]!)
   const drawDate = todayVeDate()
@@ -48,7 +48,7 @@ export function mapAnimalitosIngest(ticket: LotteryTicket) {
       issuedAt: ticket.createdAt.includes("-04:00")
         ? ticket.createdAt
         : nowVeIso(),
-      bettor: { ...BURNED_BETTOR },
+      bettor,
       paymentMethod: "Saldo jugador",
     },
     selections: [
@@ -73,7 +73,7 @@ export function mapAnimalitosIngest(ticket: LotteryTicket) {
   }
 }
 
-export function mapLoteriaIngest(ticket: LotteryTicket) {
+export function mapLoteriaIngest(ticket: LotteryTicket, bettor: BettorPayload) {
   const drawDate = todayVeDate()
   const externalTicketKey = ticket.externalTicketKey ?? newExternalKey("LOT")
   const serial = ticket.betlinkSerial ?? newSerial("LS")
@@ -104,7 +104,7 @@ export function mapLoteriaIngest(ticket: LotteryTicket) {
       issuedAt: ticket.createdAt.includes("-04:00")
         ? ticket.createdAt
         : nowVeIso(),
-      bettor: { ...BURNED_BETTOR },
+      bettor,
       paymentMethod: "Saldo jugador",
     },
     selections: [

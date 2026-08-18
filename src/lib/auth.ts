@@ -2,9 +2,11 @@ import type {
   GameSessionData,
   LotteryTicket,
   UserAccount,
+  UserProfile,
   WalletMovement,
 } from "./types"
 import { INITIAL_BALANCE } from "./types"
+import { defaultProfile, normalizeProfile } from "./betlink/bettor"
 
 const USERS_KEY = "casino_users_v3"
 const SESSION_KEY = "casino_session_v3"
@@ -30,8 +32,15 @@ function initialMovement(): WalletMovement {
 
 function normalizeUser(raw: UserAccount): UserAccount {
   const sess = raw.gameSession
+  const profile = normalizeProfile(raw)
+  const name =
+    raw.name?.trim() ||
+    `${profile.firstName} ${profile.lastName}`.trim() ||
+    raw.email
   return {
     ...raw,
+    name,
+    profile,
     gameSession: sess
       ? {
           gameId: sess.gameId,
@@ -93,6 +102,7 @@ export function registerUser(
     name: name.trim(),
     email: normalized,
     password,
+    profile: defaultProfile(name.trim()),
     balance: INITIAL_BALANCE,
     movements: [initialMovement()],
     gameSession: null,
@@ -126,13 +136,33 @@ export function getUserById(id: string): UserAccount | null {
 export function updateUserData(
   userId: string,
   patch: Partial<
-    Pick<UserAccount, "balance" | "movements" | "gameSession" | "tickets">
+    Pick<
+      UserAccount,
+      "balance" | "movements" | "gameSession" | "tickets" | "profile" | "name"
+    >
   >,
 ) {
   const users = loadUsers()
   const idx = users.findIndex((u) => u.id === userId)
   if (idx < 0) return
   users[idx] = normalizeUser({ ...users[idx], ...patch })
+  saveUsers(users)
+}
+
+export function updateUserProfile(userId: string, patch: Partial<UserProfile>) {
+  const users = loadUsers()
+  const idx = users.findIndex((u) => u.id === userId)
+  if (idx < 0) return
+  const profile = normalizeProfile({
+    ...users[idx],
+    profile: { ...users[idx].profile, ...patch },
+  })
+  const name = `${profile.firstName} ${profile.lastName}`.trim()
+  users[idx] = normalizeUser({
+    ...users[idx],
+    profile,
+    name: name || users[idx].name,
+  })
   saveUsers(users)
 }
 

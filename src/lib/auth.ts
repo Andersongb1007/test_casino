@@ -6,7 +6,7 @@ import type {
   WalletMovement,
 } from "./types"
 import { INITIAL_BALANCE } from "./types"
-import { defaultProfile, normalizeProfile } from "./betlink/bettor"
+import { normalizeProfile, validateRegistrationProfile } from "./betlink/bettor"
 
 const USERS_KEY = "casino_users_v3"
 const SESSION_KEY = "casino_session_v3"
@@ -84,25 +84,27 @@ export function setSessionUserId(id: string | null) {
 }
 
 export function registerUser(
-  name: string,
+  profileInput: UserProfile,
   email: string,
   password: string,
 ): { ok: true; user: UserAccount } | { ok: false; error: string } {
   const users = loadUsers()
   const normalized = email.trim().toLowerCase()
-  if (!name.trim()) return { ok: false, error: "Nombre requerido" }
-  if (!normalized.includes("@")) return { ok: false, error: "Email inválido" }
+  const profile = normalizeProfile({ profile: profileInput })
+  const profileErr = validateRegistrationProfile(profile, normalized)
+  if (profileErr) return { ok: false, error: profileErr }
   if (password.length < 4) return { ok: false, error: "Mínimo 4 caracteres" }
   if (users.some((u) => u.email === normalized)) {
     return { ok: false, error: "Ese email ya está registrado" }
   }
 
+  const name = `${profile.firstName} ${profile.lastName}`.trim()
   const user: UserAccount = {
     id: makeId(),
-    name: name.trim(),
+    name,
     email: normalized,
     password,
-    profile: defaultProfile(name.trim()),
+    profile,
     balance: INITIAL_BALANCE,
     movements: [initialMovement()],
     gameSession: null,

@@ -23,7 +23,7 @@ type AuthContextValue = {
   user: UserAccount | null
   ready: boolean
   login: (email: string, password: string) => string | null
-  register: (name: string, email: string, password: string) => string | null
+  register: (profile: UserProfile, email: string, password: string) => string | null
   logout: () => void
   updateProfile: (patch: Partial<UserProfile>) => string | null
   persistState: (patch: {
@@ -57,8 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null
   }, [])
 
-  const register = useCallback((name: string, email: string, password: string) => {
-    const res = registerUser(name, email, password)
+  const register = useCallback((profile: UserProfile, email: string, password: string) => {
+    const res = registerUser(profile, email, password)
     if (!res.ok) return res.error
     setUser(res.user)
     return null

@@ -29,16 +29,35 @@ export function normalizeProfile(
   raw: UserAccount | Partial<UserAccount>,
 ): UserProfile {
   if (raw.profile) {
+    let documentId = raw.profile.documentId?.replace(/\D/g, "") ?? ""
+    if (documentId === "00000000") documentId = ""
     return {
       firstName: raw.profile.firstName?.trim() ?? "",
       lastName: raw.profile.lastName?.trim() ?? "",
       phone: raw.profile.phone?.trim() ?? "",
       documentTypeId: raw.profile.documentTypeId ?? "V",
-      documentId: raw.profile.documentId?.replace(/\D/g, "") ?? "",
+      documentId,
       address: raw.profile.address?.trim() ?? "",
     }
   }
   return defaultProfile(raw.name ?? "")
+}
+
+export function validateRegistrationProfile(
+  profile: UserProfile,
+  email: string,
+): string | null {
+  return validateProfileForBetlink({
+    id: "",
+    name: "",
+    email: email.trim().toLowerCase(),
+    password: "",
+    profile: normalizeProfile({ profile }),
+    balance: 0,
+    movements: [],
+    gameSession: null,
+    tickets: [],
+  })
 }
 
 /** Arma el objeto bettor tal como lo espera POST /bets/ingest. */
